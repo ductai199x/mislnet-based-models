@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 from .layers import ConvBlock, DenseBlock, ConstrainedConv
@@ -91,14 +92,23 @@ class MISLNet(CamIdBase):
         self.conv_blocks = nn.Sequential(*self.conv_blocks)
         self.fc_blocks = nn.Sequential(*self.fc_blocks)
 
+        self.register_buffer("flatten_index_permutation", torch.tensor([0, 1, 2, 3], dtype=torch.long))
+
         if self.num_classes > 0:
             self.output = nn.Linear(self.chosen_arch[-1][2], self.num_classes)
 
     def forward(self, x):
         x = self.constrained_conv(x)
         x = self.conv_blocks(x)
+        x = x.permute(*self.flatten_index_permutation)
         x = x.flatten(1, -1)
         x = self.fc_blocks(x)
         if self.num_classes > 0:
             x = self.output(x)
         return x
+    
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        if "flatten_index_permutation" not in state_dict:
+            super().load_state_dict(state_dict, False, assign)
+        else:
+            super().load_state_dict(state_dict, strict, assign)

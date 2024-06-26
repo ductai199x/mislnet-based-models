@@ -3,3 +3,5 @@
 *logs*
 *log*
 *scratch*
+example_images/
+fsg_image_128_pytorch_from_tf1.ckpt

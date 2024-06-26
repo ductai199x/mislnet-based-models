@@ -1,3 +1,4 @@
+import re
 import math
 import torch
 import torch.nn.functional as F
@@ -7,7 +8,22 @@ from .fsm import FSM
 
 
 class FsmPLWrapper(LightningModule):
-    def __init__(self, model_config, training_config):
+    default_trainining_config = {
+        "lr": 1.0e-3,
+        "decay_step": 40000,
+        "decay_rate": 0.80,
+        "class_weights": None,
+    }
+    default_model_config = {
+        "_target_": FSM,
+    }
+
+    def __init__(
+        self,
+        model_config=default_model_config,
+        training_config=default_trainining_config,
+        **kwargs,
+    ):
         super().__init__()
         self.model: FSM = model_config["_target_"](**model_config)
         self.is_constr_conv = hasattr(self.model.fe, "constrained_conv")
@@ -19,9 +35,54 @@ class FsmPLWrapper(LightningModule):
         self.test_acc = MulticlassAccuracy(num_classes=2)
 
         self.save_hyperparameters()
-        self.example_input_array = (torch.empty(1, 3, self.model.fe.patch_size, self.model.fe.patch_size), torch.empty(1, 3, self.model.fe.patch_size, self.model.fe.patch_size))
+        self.example_input_array = (
+            torch.empty(1, 3, self.model.fe.patch_size, self.model.fe.patch_size),
+            torch.empty(1, 3, self.model.fe.patch_size, self.model.fe.patch_size),
+        )
 
         self.model.fe_freeze = True
+
+    def modify_legacy_state_dict(self, state_dict):
+        modified_state_dict = dict(state_dict)
+        for k, v in state_dict.items():
+            new_k = ""
+            if "mislnet" in k:
+                new_k += ".fe."
+                if "weights_cstr" in k:
+                    new_k += "constrained_conv.weight"
+                elif "conv" in k:
+                    block_num = int(re.search(r"(?<=conv)\d+", k).group(0)) - 1
+                    type_ = re.search(r".+(?:\.)(.+)$", k).group(1)
+                    new_k += f"conv_blocks.{block_num}.conv.{type_}"
+                elif "bn" in k:
+                    block_num = int(re.search(r"(?<=bn)\d+", k).group(0)) - 1
+                    type_ = re.search(r".+(?:\.)(.+)$", k).group(1)
+                    new_k += f"conv_blocks.{block_num}.bn.{type_}"
+                elif "fc" in k:
+                    block_num = int(re.search(r"(?<=fc)\d+", k).group(0)) - 1
+                    type_ = re.search(r".+(?:\.)(.+)$", k).group(1)
+                    new_k += f"fc_blocks.{block_num}.fc.{type_}"
+            elif "comparenet" in k:
+                new_k += ".comparenet."
+                block_num = int(re.search(r"(?<=fc)\d+", k).group(0))
+                type_ = re.search(r".+(?:\.)(.+)$", k).group(1)
+                if block_num in [1, 2]:
+                    new_k += f"fc{block_num}.fc.{type_}"
+                elif block_num == 3:
+                    new_k += f"fc{block_num}.{type_}"
+
+            modified_state_dict[new_k] = v
+            del modified_state_dict[k]
+        modified_state_dict["fe.flatten_index_permutation"] = torch.LongTensor([0, 2, 3, 1])
+        return modified_state_dict
+
+    def on_load_checkpoint(self, checkpoint: torch.Dict[str, torch.Any]) -> None:
+        if checkpoint.get("legacy") == True:
+            checkpoint["state_dict"] = self.modify_legacy_state_dict(checkpoint["state_dict"])
+        return super().on_load_checkpoint(checkpoint)
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        self.model.load_state_dict(state_dict, strict, assign)
 
     def forward(self, x1, x2):
         return self.model(x1, x2)

@@ -22,11 +22,14 @@ class ConstrainedConv(nn.Module):
 
     def forward(self, x):
         w = self.weight
-        w = w.view(-1, self.kernel_size * self.kernel_size)
-        w = w - w.mean(1)[..., None] + 1 / (self.kernel_size * self.kernel_size - 1)
-        w = w - (w + 1) * self.one_middle
-        w = w.view(self.num_filters, self.input_chan, self.kernel_size, self.kernel_size)
-        return nn.functional.conv2d(x, w, padding=2)
+        if self.training:
+            w = w.view(-1, self.kernel_size * self.kernel_size)
+            w = w - w.mean(1)[..., None] + 1 / (self.kernel_size * self.kernel_size - 1)
+            w = w - (w + 1) * self.one_middle
+            w = w.view(self.num_filters, self.input_chan, self.kernel_size, self.kernel_size)
+        x = nn.functional.conv2d(x, w, padding="valid")
+        x = nn.functional.pad(x, (2, 3, 2, 3))
+        return x
 
 
 class ConvBlock(torch.nn.Module):
