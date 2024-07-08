@@ -5,11 +5,12 @@ from typing import *
 
 
 class ConstrainedConv(nn.Module):
-    def __init__(self, input_chan=3, num_filters=6):
+    def __init__(self, input_chan=3, num_filters=6, is_constrained=True):
         super().__init__()
         self.kernel_size = 5
         self.input_chan = input_chan
         self.num_filters = num_filters
+        self.is_constrained = is_constrained
         self.weight = nn.Parameter(
             nn.init.xavier_normal_(
                 torch.empty(num_filters, input_chan, self.kernel_size, self.kernel_size), gain=1 / 3
@@ -22,7 +23,7 @@ class ConstrainedConv(nn.Module):
 
     def forward(self, x):
         w = self.weight
-        if self.training:
+        if self.is_constrained:
             w = w.view(-1, self.kernel_size * self.kernel_size)
             w = w - w.mean(1)[..., None] + 1 / (self.kernel_size * self.kernel_size - 1)
             w = w - (w + 1) * self.one_middle

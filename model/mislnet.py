@@ -57,14 +57,15 @@ class MISLNet(CamIdBase):
         variant: str,
         num_classes=0,
         num_filters=6,
-        **args,
+        is_constrained=True,
+        **kwargs,
     ):
         super().__init__(patch_size, num_classes)
         self.variant = variant
         self.chosen_arch = self.arch[variant]
         self.num_filters = num_filters
 
-        self.constrained_conv = ConstrainedConv(num_filters=num_filters)
+        self.constrained_conv = ConstrainedConv(num_filters=num_filters, is_constrained=is_constrained)
 
         self.conv_blocks = []
         self.fc_blocks = []
