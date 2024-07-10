@@ -43,6 +43,7 @@ class CamIdDataset(Dataset):
         else:
             self.class_weights = torch.tensor([1.0 for _ in self.counter.keys()])
 
+        print(f"[INFO]: Model patch size = {model_patch_size}, Dataset patch size = {ds_patch_size}")
         if model_patch_size != ds_patch_size:
             self.transform = RandomCrop(model_patch_size)
         else:
