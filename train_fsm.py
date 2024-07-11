@@ -154,7 +154,7 @@ def train(args: argparse.Namespace) -> None:
         enable_checkpointing=not args.fast_dev_run,
         log_every_n_steps=10,
         reload_dataloaders_every_n_epochs=1,
-        # val_check_interval=40000,
+        val_check_interval=0.25,
     )
     if isinstance(logger, WandbLogger):
         logger.watch(model, log="all", log_freq=100)

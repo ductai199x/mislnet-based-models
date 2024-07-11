@@ -13,6 +13,7 @@ class FsmPLWrapper(LightningModule):
         "decay_step": 40000,
         "decay_rate": 0.80,
         "class_weights": None,
+        "unfreeze_fe_step": 120_000,
     }
     default_model_config = {
         "_target_": FSM,
@@ -28,7 +29,8 @@ class FsmPLWrapper(LightningModule):
         self.model: FSM = model_config["_target_"](**model_config)
         self.is_constr_conv = hasattr(self.model.fe, "constrained_conv")
         self.training_config = training_config
-        self.class_weights = training_config["class_weights"]
+        self.class_weights = training_config.get("class_weights", self.default_trainining_config["class_weights"])
+        self.unfreeze_fe_step = training_config.get("unfreeze_fe_step", self.default_trainining_config["unfreeze_fe_step"])
 
         self.train_acc = MulticlassAccuracy(num_classes=2)
         self.val_acc = MulticlassAccuracy(num_classes=2)
@@ -93,13 +95,14 @@ class FsmPLWrapper(LightningModule):
         y_hat_2_1 = self.model(x2, x1)
         loss = F.cross_entropy(y_hat_1_2, y, weight=self.class_weights.to(self.device))
         loss += F.cross_entropy(y_hat_2_1, y, weight=self.class_weights.to(self.device))
-        if self.global_step > 800_000:
+        if self.global_step > self.unfreeze_fe_step:
             if self.model.fe_freeze:
                 self.model.fe_freeze = False
             if self.is_constr_conv:
-                loss += min(
-                    0.1, math.sqrt(1 / (self.global_step / 2000))
-                ) * self.model.fe.constrained_conv.weight.norm(2)
+                if self.model.fe.constrained_conv.weight.std() > 1.0:
+                    loss += min(
+                        0.1, math.sqrt(1 / (self.global_step / 2000))
+                    ) * self.model.fe.constrained_conv.weight.norm(2)
 
         self.train_acc(y_hat_1_2, y)
         self.train_acc(y_hat_2_1, y)

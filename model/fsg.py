@@ -35,16 +35,77 @@ def gaussian_filter_2d(img: torch.Tensor, sigma: float) -> torch.Tensor:
 
 
 class FSG(FsmPLWrapper):
-    def __init__(self, stride_ratio=0.5, fast_sim_mode=False, loc_threshold=0.37, **kwargs):
+    """
+    Forensic Similarity Graph (FSG) algorithm.
+    https://ieeexplore.ieee.org/abstract/document/9113265
+
+    This class is designed to create a graph-based representation of forensic similarity between different patches of an image, allowing for the detection of manipulated regions.
+
+    Parameters:
+    - stride_ratio (float): The ratio of the stride to the patch size, determining the overlap between patches. The lower the value, the higher the overlap.
+    - fast_sim_mode (bool): If True, the algorithm uses a faster method to compute similarity scores, potentially at the cost of accuracy.
+    - loc_threshold (float): The threshold for determining the location of interest in the similarity graph. Values above this threshold are considered significant.
+    - is_high_sim (bool): If True, higher similarity scores indicate higher similarity. If False, lower scores indicate higher similarity.
+    - need_input_255 (bool): If True, input images are expected to be scaled to [0, 255]. If False, images are expected to be in [0, 1].
+    - **kwargs: Additional keyword arguments passed to the superclass initializer.
+
+    Example Usage:
+    ```python
+    import torch
+    import matplotlib.pyplot as plt
+    from torchvision.io import read_image, ImageReadMode
+    from model import FSG
+
+    ckpt_path = "path/to/ckpt.pth"
+    model = FSG.load_from_checkpoint(ckpt_path, map_location="cpu", stride_ratio=0.5, fast_sim_mode=False, loc_threshold=0.37, is_high_sim=False, need_input_255=False)
+    model.eval()
+
+    img_path = "path/to/image.jpg"
+    image = read_image(img_path, mode=ImageReadMode.RGB).float() / 255
+
+    with torch.no_grad():
+        img_preds, loc_preds = model(image[None, ...].to(model.device))
+
+    plt.imshow(loc_preds.cpu()[0])
+    plt.colorbar()
+    plt.show()
+    ```
+    """
+    def __init__(
+        self,
+        stride_ratio=0.5,
+        fast_sim_mode=False,
+        loc_threshold=0.37,
+        is_high_sim=True,
+        need_input_255=False,
+        **kwargs,
+    ):
+        """
+        Initializes the Forensic Similarity Graph (FSG) algorithm with specific parameters.
+
+        Parameters:
+        - stride_ratio (float): The ratio of the stride to the patch size, determining the overlap between patches. The lower the value, the higher the overlap.
+        - fast_sim_mode (bool): If True, the algorithm uses a faster method to compute similarity scores, potentially at the cost of accuracy.
+        - loc_threshold (float): The threshold for determining the location of interest in the similarity graph. Values above this threshold are considered significant.
+        - is_high_sim (bool): If True, higher similarity scores indicate higher similarity. If False, lower scores indicate higher similarity.
+        - need_input_255 (bool): If True, input images are expected to be scaled to [0, 255]. If False, images are expected to be in [0, 1].
+        - **kwargs: Additional keyword arguments passed to the superclass initializer.
+
+        This class is designed to create a graph-based representation of forensic similarity between different patches of an image, allowing for the detection of manipulated regions.
+        """
         super().__init__(**kwargs)
         self.patch_size = self.model.fe.patch_size
         self.stride = int(self.patch_size * stride_ratio)
         self.fast_sim_mode = fast_sim_mode
         self.loc_threshold = loc_threshold
+        self.is_high_sim = is_high_sim
+        self.need_input_255 = need_input_255
         warnings.filterwarnings("ignore")
 
     def get_batched_patches(self, x: torch.Tensor):
         B, C, H, W = x.shape
+        if self.need_input_255:
+            x = x * 255
         # split images into batches of patches: B x C x H x W -> B x (NumPatchHeight x NumPatchWidth) x C x PatchSize x PatchSize
         batched_patches = (
             x.unfold(2, self.patch_size, self.stride)
@@ -92,6 +153,8 @@ class FSG(FsmPLWrapper):
         else:
             sim_mat = sim_scores[:, 1].view(P, P)
             sim_mat = 0.5 * (sim_mat + sim_mat.T)
+        if not self.is_high_sim:
+            sim_mat = 1 - sim_mat
         sim_mat.fill_diagonal_(0.0)
         degree_mat = torch.diag(sim_mat.sum(axis=1))
         laplacian_mat = degree_mat - sim_mat
