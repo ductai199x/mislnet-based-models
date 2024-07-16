@@ -13,7 +13,7 @@ class FsmPLWrapper(LightningModule):
         "decay_step": 40000,
         "decay_rate": 0.80,
         "class_weights": None,
-        "unfreeze_fe_step": 120_000,
+        "unfreeze_fe_step": None,
     }
     default_model_config = {
         "_target_": FSM,
@@ -95,7 +95,7 @@ class FsmPLWrapper(LightningModule):
         y_hat_2_1 = self.model(x2, x1)
         loss = F.cross_entropy(y_hat_1_2, y, weight=self.class_weights.to(self.device))
         loss += F.cross_entropy(y_hat_2_1, y, weight=self.class_weights.to(self.device))
-        if self.global_step > self.unfreeze_fe_step:
+        if self.unfreeze_fe_step is not None and self.global_step > self.unfreeze_fe_step:
             if self.model.fe_freeze:
                 self.model.fe_freeze = False
             if self.is_constr_conv:

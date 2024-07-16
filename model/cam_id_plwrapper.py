@@ -29,11 +29,12 @@ class CamIdPLWrapper(LightningModule):
         x, y = batch
         y_hat = self.model(x)
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights.to(self.device))
-        if self.is_constr_conv and loss < 1.0:
-            if self.model.constrained_conv.weight.std() > 1.0:
-                loss += min(
-                    1, math.sqrt(1 / (self.global_step / 10000))
-                ) * self.model.constrained_conv.weight.norm(2)
+        loss += self.model.constrained_conv.weight.norm(2)
+        # if self.is_constr_conv and loss < 1.0:
+        #     if self.model.constrained_conv.weight.std() > 1.0:
+        #         loss += min(
+        #             1, math.sqrt(1 / (self.global_step / 10000))
+        #         ) * self.model.constrained_conv.weight.norm(2)
         self.train_acc(y_hat, y)
         self.log("train_loss", loss, on_step=True, on_epoch=True, sync_dist=True, prog_bar=True)
         self.log("train_acc", self.train_acc, on_step=True, on_epoch=True, sync_dist=True, prog_bar=True)

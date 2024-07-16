@@ -5,7 +5,7 @@ config = {
         "_target_": MISLNet,
         "patch_size": 256,
         "variant": "p256",  # "p256_3fc_256e", "p256", "p128", "p96", "p64"
-        "num_classes": 70,
+        "num_classes": 64,
         "num_filters": 6,
     },
     "data_args": {

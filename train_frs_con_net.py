@@ -2,6 +2,7 @@ import os
 from importlib.machinery import SourceFileLoader
 import rich
 import argparse
+import pandas as pd
 import wandb
 
 import torch
@@ -12,67 +13,54 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 from typing import *
 
-from model.fsm_plwrapper import FsmPLWrapper
-from data.fsm_dataset import CamIdDataset, FsmDataset
+from model.frs_con_net import ForensicConsistencyNetwork
+from data.img_consistency_dataset import ImageConsistencyDataset
 
 torch.set_float32_matmul_precision("high")
 
 parser = argparse.ArgumentParser()
-EXPERIMENT_NAME = "fsm"
+EXPERIMENT_NAME = "frs_con_net"
 seed_everything(42)
 
 
-def prepare_model(args: dict[str, Any]) -> FsmPLWrapper:
-    model = FsmPLWrapper(args["model_args"], args["training_args"])
+def prepare_model(args: dict[str, Any]) -> ForensicConsistencyNetwork:
     if args["prev_ckpt"]:
-        ckpt = torch.load(args["prev_ckpt"], map_location="cpu")
-        model.load_state_dict(ckpt["state_dict"])
+        model = ForensicConsistencyNetwork.load_from_checkpoint(args["prev_ckpt"])
+    else:
+        model = ForensicConsistencyNetwork(args["model_args"], args["training_args"])
     return model
 
 
 def prepare_datasets(args: dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
-    train_camid_ds = CamIdDataset(
+    root_dir = args["root_dir"]
+    metadata = pd.read_csv(f"{root_dir}/metadata.csv")
+    train_metadata = metadata.query("split == 'train'")
+    val_metadata = metadata.query("split == 'val'")
+
+    train_ds = ImageConsistencyDataset(
         root_dir=args["root_dir"],
-        ds_patch_size=args["data_args"]["patch_size"],
-        model_patch_size=args["model_args"]["fe_config"]["patch_size"],
-        split="train",
-        calc_class_weights=False,
-        ignore_classes=args["data_args"]["ignore_classes"],
-        remap_labels=args["data_args"]["remap_labels"],
+        image_paths=train_metadata["path"].tolist(),
+        patch_size=args["data_args"]["patch_size"],
+        patch_per_dir=args["data_args"]["patch_per_dir"],
     )
-    train_ds = FsmDataset(
-        train_camid_ds, 
-        lookahead_size=args["data_args"]["lookahead_size"],
-        dissim_vs_sim_ratio=args["data_args"]["dissim_vs_sim_ratio"],
-        calc_class_weights=args["data_args"]["calc_class_weights"],
-    )
-    val_camid_ds = CamIdDataset(
+    val_ds = ImageConsistencyDataset(
         root_dir=args["root_dir"],
-        ds_patch_size=args["data_args"]["patch_size"],
-        model_patch_size=args["model_args"]["fe_config"]["patch_size"],
-        split="val",
-        calc_class_weights=False,
-        ignore_classes=args["data_args"]["ignore_classes"],
-        remap_labels=args["data_args"]["remap_labels"],
+        image_paths=val_metadata["path"].tolist(),
+        patch_size=args["data_args"]["patch_size"],
+        patch_per_dir=args["data_args"]["patch_per_dir"],
     )
-    val_ds = FsmDataset(
-        val_camid_ds, 
-        lookahead_size=args["data_args"]["lookahead_size"],
-        dissim_vs_sim_ratio=1,
-        calc_class_weights=False,
-    )
-    args["training_args"]["class_weights"] = train_ds.class_weights
+
     train_loader = DataLoader(
         train_ds,
         batch_size=args["training_args"]["batch_size"],
-        shuffle=False,
+        shuffle=True,
         num_workers=args["training_args"]["num_workers"],
         persistent_workers=True,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=args["training_args"]["batch_size"],
-        shuffle=False,
+        shuffle=True,
         num_workers=args["training_args"]["num_workers"],
         persistent_workers=True,
     )
@@ -128,12 +116,12 @@ def train(args: argparse.Namespace) -> None:
     lr_monitor = LearningRateMonitor(logging_interval="step")
     model_ckpt = ModelCheckpoint(
         dirpath=f"{log_path}/checkpoints",
-        monitor="val_acc",
-        filename=f"{args.pre + '-' if args.pre != '' else ''}{{epoch:02d}}-{{val_acc:.4f}}",
+        monitor="val_loss",
+        filename=f"{args.pre + '-' if args.pre != '' else ''}{{epoch:02d}}-{{val_loss:.4f}}",
         verbose=True,
         save_last=True,
         save_top_k=5,
-        mode="max",
+        mode="min",
     )
     callbacks = [] if args.fast_dev_run else [ModelSummary(-1), TQDMProgressBar(refresh_rate=1), model_ckpt, lr_monitor]
 
@@ -143,7 +131,7 @@ def train(args: argparse.Namespace) -> None:
         num_gpus = "auto" if args.gpus == -1 else args.gpus
     trainer = Trainer(
         accelerator="auto",
-        strategy=DDPStrategy(find_unused_parameters=True),
+        strategy=DDPStrategy(find_unused_parameters=False),
         devices=num_gpus,
         max_epochs=args.max_epochs,
         accumulate_grad_batches=args.training_args["accum_grad_batches"],
@@ -154,7 +142,6 @@ def train(args: argparse.Namespace) -> None:
         enable_checkpointing=not args.fast_dev_run,
         log_every_n_steps=10,
         reload_dataloaders_every_n_epochs=1,
-        val_check_interval=0.25,
     )
     if isinstance(logger, WandbLogger):
         logger.watch(model, log="all", log_freq=100)
