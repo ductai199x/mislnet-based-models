@@ -7,7 +7,7 @@ from model.mislnet import MISLNet
 from typing import Type, Union
 
 
-class ForensicConsistencyNetwork(LightningModule):
+class ForensicConsistencyPLWrapper(LightningModule):
     default_trainining_config = {
         "lr": 1.0e-2,
         "decay_step": 1,

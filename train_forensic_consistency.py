@@ -13,7 +13,7 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 from typing import *
 
-from model.frs_con_net import ForensicConsistencyNetwork
+from model.frs_con_net import ForensicConsistencyPLWrapper
 from data.img_consistency_dataset import ImageConsistencyDataset
 
 torch.set_float32_matmul_precision("high")
@@ -23,11 +23,11 @@ EXPERIMENT_NAME = "frs_con_net"
 seed_everything(42)
 
 
-def prepare_model(args: dict[str, Any]) -> ForensicConsistencyNetwork:
+def prepare_model(args: dict[str, Any]) -> ForensicConsistencyPLWrapper:
     if args["prev_ckpt"]:
-        model = ForensicConsistencyNetwork.load_from_checkpoint(args["prev_ckpt"])
+        model = ForensicConsistencyPLWrapper.load_from_checkpoint(args["prev_ckpt"])
     else:
-        model = ForensicConsistencyNetwork(args["model_args"], args["training_args"])
+        model = ForensicConsistencyPLWrapper(args["model_args"], args["training_args"])
     return model
 
 
