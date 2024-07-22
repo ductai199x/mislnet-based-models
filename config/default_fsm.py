@@ -31,6 +31,6 @@ def config(fe_config, fe_ckpt=None):
             "lr": 1.0e-3,
             "decay_step": 40000,
             "decay_rate": 0.80,
-            "unfreeze_fe_step": 2_000,
+            "unfreeze_fe_step": 160_000,
         },
     }
