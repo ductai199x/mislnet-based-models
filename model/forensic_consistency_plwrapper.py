@@ -35,6 +35,7 @@ class ForensicConsistencyPLWrapper(LightningModule):
         **kwargs,
     ):
         super().__init__()
+        model_config["fe_config"]["num_classes"] = 0
         self.fe: nn.Module = self.load_module_from_ckpt(
             model_config["_target_"], model_config["fe_ckpt"], "", **model_config["fe_config"]
         )
@@ -100,7 +101,8 @@ class ForensicConsistencyPLWrapper(LightningModule):
 
     def forward(self, x):
         pred = self.fe(x)
-        return F.normalize(pred, p=2, dim=1) @ F.normalize(pred, p=2, dim=1).t()
+        pred = F.normalize(pred, p=2, dim=1)
+        return pred @ pred.t()
 
     def build_label_and_weight_matrices(self, batch):
         device = batch.device
@@ -125,7 +127,10 @@ class ForensicConsistencyPLWrapper(LightningModule):
         return (pred_mat - label_mat).pow(2).mul(weight_mat).sum().sqrt()
 
     def training_step(self, batch, batch_idx):
-        x = batch
+        if isinstance(batch, (tuple, list)):
+            x = torch.cat(batch, dim=0)
+        else:
+            x = batch
         label_mat, weight_mat = self.build_label_and_weight_matrices(x)
         x = x.view(-1, *x.shape[-3:])
         pred_mat = self(x)
@@ -137,7 +142,10 @@ class ForensicConsistencyPLWrapper(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x = batch
+        if isinstance(batch, (tuple, list)):
+            x = torch.cat(batch, dim=0)
+        else:
+            x = batch
         label_mat, weight_mat = self.build_label_and_weight_matrices(x)
         x = x.view(-1, *x.shape[-3:])
         pred_mat = self(x)

@@ -13,14 +13,13 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 from typing import *
 
-from model.frs_con_net import ForensicConsistencyPLWrapper
+from model.forensic_consistency_plwrapper import ForensicConsistencyPLWrapper
 from data.img_consistency_dataset import ImageConsistencyDataset
 
 torch.set_float32_matmul_precision("high")
 
 parser = argparse.ArgumentParser()
 EXPERIMENT_NAME = "frs_con_net"
-seed_everything(42)
 
 
 def prepare_model(args: dict[str, Any]) -> ForensicConsistencyPLWrapper:
@@ -32,22 +31,26 @@ def prepare_model(args: dict[str, Any]) -> ForensicConsistencyPLWrapper:
 
 
 def prepare_datasets(args: dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
-    root_dir = args["root_dir"]
-    metadata = pd.read_csv(f"{root_dir}/metadata.csv")
-    train_metadata = metadata.query("split == 'train'")
-    val_metadata = metadata.query("split == 'val'")
+    train_metadata, val_metadata = [], []
+    for data_dir in args["data_args"]["data_dirs"]:
+        metadata = pd.read_csv(f"{data_dir}/metadata.csv", index_col=None)
+        metadata["path"] = metadata["path"].apply(lambda x: f"{data_dir}/{x}")
+        train_metadata.append(metadata.query("split == 'train'"))
+        val_metadata.append(metadata.query("split == 'val'"))
+    train_metadata = pd.concat(train_metadata).reset_index(drop=True)
+    val_metadata = pd.concat(val_metadata).reset_index(drop=True)
 
+    args["data_args"].pop("data_dirs")
     train_ds = ImageConsistencyDataset(
-        root_dir=args["root_dir"],
+        root_dir="",
         image_paths=train_metadata["path"].tolist(),
-        patch_size=args["data_args"]["patch_size"],
-        patch_per_dir=args["data_args"]["patch_per_dir"],
+        **args["data_args"],
     )
+    args["data_args"].update({"is_augment_input": False})
     val_ds = ImageConsistencyDataset(
-        root_dir=args["root_dir"],
+        root_dir="",
         image_paths=val_metadata["path"].tolist(),
-        patch_size=args["data_args"]["patch_size"],
-        patch_per_dir=args["data_args"]["patch_per_dir"],
+        **args["data_args"],
     )
 
     train_loader = DataLoader(
@@ -134,7 +137,7 @@ def train(args: argparse.Namespace) -> None:
         strategy=DDPStrategy(find_unused_parameters=False),
         devices=num_gpus,
         max_epochs=args.max_epochs,
-        accumulate_grad_batches=args.training_args["accum_grad_batches"],
+        accumulate_grad_batches=args.training_args.get("accum_grad_batches", 1),
         logger=logger,
         profiler=None,
         callbacks=callbacks,
@@ -142,6 +145,7 @@ def train(args: argparse.Namespace) -> None:
         enable_checkpointing=not args.fast_dev_run,
         log_every_n_steps=10,
         reload_dataloaders_every_n_epochs=1,
+        val_check_interval=args.training_args.get("validation_interval", None),
     )
     if isinstance(logger, WandbLogger):
         logger.watch(model, log="all", log_freq=100)
@@ -175,13 +179,6 @@ def parse_args(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def main():
-    parser.add_argument(
-        "-d",
-        "--root-dir",
-        type=str,
-        help="the path to a the root of the dataset",
-        required=True,
-    )
     parser.add_argument(
         "-c",
         "--config",
