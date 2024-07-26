@@ -14,6 +14,12 @@ def config(fe_config, fe_ckpt=None):
         "data_args": {
             "patch_size": 128,
             "patch_per_dir": 5,
+            "data_dirs": [
+                "/media/nas2/misl_image_db",
+                "/media/nas2/Datasets/unsplash_image_dataset",
+                "/media/nas2/Datasets/pexel_image_dataset/",
+            ],
+            "is_augment_input": False,
         },
         "training_args": {
             "max_epochs": 100,
