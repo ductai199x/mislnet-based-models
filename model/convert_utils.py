@@ -49,8 +49,8 @@ def patch_pred_to_pixel_pred(patch_pred: torch.Tensor, patch_size: int, stride: 
     for i, (x, y) in enumerate(xy_inds):
         pixel_pred[y : y + patch_size, x : x + patch_size] += patch_pred[i]
         coverage_map[y : y + patch_size, x : x + patch_size] += 1
-    pixel_pred = gaussian_filter_2d(pixel_pred, sigma=8)
-    coverage_map = gaussian_filter_2d(coverage_map, sigma=8)
+    pixel_pred = gaussian_filter_2d(pixel_pred, sigma=16)
+    coverage_map = gaussian_filter_2d(coverage_map, sigma=16)
     pixel_pred = pixel_pred / (coverage_map + 1e-8)
     return pixel_pred
 

@@ -23,10 +23,16 @@ EXPERIMENT_NAME = "frs_con_net"
 
 
 def prepare_model(args: dict[str, Any]) -> ForensicConsistencyPLWrapper:
+    state_dict = None
     if args["prev_ckpt"]:
-        model = ForensicConsistencyPLWrapper.load_from_checkpoint(args["prev_ckpt"])
-    else:
-        model = ForensicConsistencyPLWrapper(args["model_args"], args["training_args"])
+        if args["resume"]:
+            return ForensicConsistencyPLWrapper.load_from_checkpoint(args["prev_ckpt"])
+        else:
+            ckpt = torch.load(args["prev_ckpt"], map_location="cpu")
+            state_dict = ckpt["state_dict"]
+    model = ForensicConsistencyPLWrapper(args["model_args"], args["training_args"])
+    if state_dict is not None:
+        model.load_state_dict(state_dict)
     return model
 
 
@@ -38,7 +44,8 @@ def prepare_datasets(args: dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
         train_metadata.append(metadata.query("split == 'train'"))
         val_metadata.append(metadata.query("split == 'val'"))
     train_metadata = pd.concat(train_metadata).reset_index(drop=True)
-    val_metadata = pd.concat(val_metadata).reset_index(drop=True)
+    print("Limiting the number of samples to 5,000 for validation set")
+    val_metadata = pd.concat(val_metadata).sample(n=5_000, random_state=42).reset_index(drop=True)
 
     args["data_args"].pop("data_dirs")
     train_ds = ImageConsistencyDataset(
