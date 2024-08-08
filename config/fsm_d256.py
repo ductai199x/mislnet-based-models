@@ -1,6 +1,7 @@
 from importlib.machinery import SourceFileLoader
 from model.fsm import FSM
 
+
 def config(fe_config, fe_ckpt=None):
     if isinstance(fe_config, str):
         fe_config_module = SourceFileLoader("config", fe_config).load_module()
