@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from lightning.pytorch import LightningModule
 from torchmetrics.classification import MulticlassAccuracy
 from .fsm import FSM
+from typing import Dict, Any
 
 
 class FsmPLWrapper(LightningModule):
@@ -21,12 +22,14 @@ class FsmPLWrapper(LightningModule):
 
     def __init__(
         self,
-        model_config=default_model_config,
-        training_config=default_trainining_config,
+        model_config: Dict[str, Any] = default_model_config,
+        training_config: Dict[str, Any] = default_trainining_config,
         **kwargs,
     ):
         super().__init__()
-        self.model: FSM = model_config["_target_"](**model_config)
+        model_cls = model_config.pop("_target_")
+        model_config["model_name"] = model_cls.__name__
+        self.model: FSM = model_cls(**model_config)
         self.is_constr_conv = hasattr(self.model.fe, "constrained_conv")
         self.training_config = training_config
         self.class_weights = training_config.get("class_weights", self.default_trainining_config["class_weights"])
@@ -36,10 +39,10 @@ class FsmPLWrapper(LightningModule):
         self.val_acc = MulticlassAccuracy(num_classes=2)
         self.test_acc = MulticlassAccuracy(num_classes=2)
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(model_config, training_config)
         self.example_input_array = (
             torch.empty(1, 3, self.model.fe.patch_size, self.model.fe.patch_size),
-            torch.empty(1, 3, self.model.fe.patch_size, self.model.fe.patch_size),
+            torch.empty(1, 3, self.model.fe.patch_size, self.modl.fe.patch_size),
         )
 
         self.model.fe_freeze = True

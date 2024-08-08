@@ -17,9 +17,9 @@ config = {
     "training_args": {
         "max_epochs": 70,
         "batch_size": 64,
-        "num_workers": 10,
-        "accum_grad_batches": 1,
-        "lr": 1.0e-2,
+        "num_workers": 16,
+        "accum_grad_batches": 4,
+        "lr": 1.0e-3,
         "decay_step": 3,
         "decay_rate": 0.50,
     },

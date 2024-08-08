@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from lightning.pytorch import LightningModule
 from model.mislnet import MISLNet
-from typing import Type, Union
+from typing import Type, Union, Dict, Any
 
 
 class ForensicConsistencyPLWrapper(LightningModule):
@@ -30,14 +30,16 @@ class ForensicConsistencyPLWrapper(LightningModule):
 
     def __init__(
         self,
-        model_config=default_model_config,
-        training_config=default_trainining_config,
+        model_config: Dict[str, Any] = default_model_config,
+        training_config: Dict[str, Any] = default_trainining_config,
         **kwargs,
     ):
         super().__init__()
+        model_cls = model_config.pop("_target_")
+        model_config["fe_name"] = model_cls.__name__
         model_config["fe_config"]["num_classes"] = 0
         self.fe: nn.Module = self.load_module_from_ckpt(
-            model_config["_target_"], model_config["fe_ckpt"], "", **model_config["fe_config"]
+            model_cls, model_config["fe_ckpt"], "", **model_config["fe_config"]
         )
         self.is_constr_conv = hasattr(self.fe, "constrained_conv")
 
@@ -47,7 +49,7 @@ class ForensicConsistencyPLWrapper(LightningModule):
         self.beta = training_config.get("beta", self.default_trainining_config["beta"])
         self.gamma = training_config.get("gamma", self.default_trainining_config["gamma"])
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(model_config, training_config)
 
         self.example_input_array = torch.empty(1, 3, self.fe.patch_size, self.fe.patch_size)
 
