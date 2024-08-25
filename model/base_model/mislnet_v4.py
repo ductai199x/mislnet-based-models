@@ -45,12 +45,9 @@ class FusedConstrainedConv(nn.Module):
         self.one_middle[self.one_middle.numel() // 2] = 1
         self.one_middle = nn.Parameter(self.one_middle, requires_grad=False)
 
-        self.rgb_weight = nn.Parameter(
-            nn.init.xavier_normal_(
-                torch.empty(num_rgb_filters, input_chan, self.kernel_size, self.kernel_size), gain=1 / 3
-            ),
-            requires_grad=True,
-        )
+        rgb_weight = torch.empty(num_rgb_filters, input_chan, self.kernel_size, self.kernel_size)
+        nn.init.xavier_normal_(rgb_weight, gain=1/3)
+        self.rgb_weight = nn.Parameter(rgb_weight, requires_grad=True)
 
     def forward(self, x):
         w_cstr = self.weight
