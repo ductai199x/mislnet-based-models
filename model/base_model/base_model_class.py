@@ -1,11 +1,12 @@
 import torch.nn as nn
 
 
-class CamIdBase(nn.Module):
+class BaseModel(nn.Module):
     def __init__(
         self,
         patch_size: int,
         num_classes: int = 0,
+        **kwargs,
     ):
         super().__init__()
         self.patch_size = patch_size

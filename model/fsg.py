@@ -1,37 +1,15 @@
-import math
 import warnings
 import torch
 import torch.nn.functional as F
-from torch.distributions import Normal
-
 from numba import jit
-
-from .fsm_plwrapper import FsmPLWrapper
-from typing import *
+from .convert_utils import gaussian_filter_2d
+from .plwrapper import FsmPLWrapper
 
 
 def batch_fn(iterable, n=1):
     l = len(iterable)
     for ndx in range(0, l, n):
         yield iterable[ndx : min(ndx + n, l)]
-
-
-def gaussian_kernel_1d(sigma: float, num_sigmas: float = 3.0) -> torch.Tensor:
-    radius = math.ceil(num_sigmas * sigma)
-    support = torch.arange(-radius, radius + 1, dtype=torch.float)
-    kernel = Normal(loc=0, scale=sigma).log_prob(support).exp_()
-    # Ensure kernel weights sum to 1, so that image brightness is not altered
-    return kernel.mul_(1 / kernel.sum())
-
-
-def gaussian_filter_2d(img: torch.Tensor, sigma: float) -> torch.Tensor:
-    kernel_1d = gaussian_kernel_1d(sigma).to(img.device)  # Create 1D Gaussian kernel
-    padding = len(kernel_1d) // 2  # Ensure that image size does not change
-    img = img[None, None, ...]  # Need 4D data for ``conv2d()``
-    # Convolve along columns and rows
-    img = F.conv2d(img, weight=kernel_1d.view(1, 1, -1, 1), padding=(padding, 0))
-    img = F.conv2d(img, weight=kernel_1d.view(1, 1, 1, -1), padding=(0, padding))
-    return img.squeeze()  # Make 2D again
 
 
 class FSG(FsmPLWrapper):
@@ -41,13 +19,13 @@ class FSG(FsmPLWrapper):
 
     This class is designed to create a graph-based representation of forensic similarity between different patches of an image, allowing for the detection of manipulated regions.
 
-    Parameters:
-    - stride_ratio (float): The ratio of the stride to the patch size, determining the overlap between patches. The lower the value, the higher the overlap.
-    - fast_sim_mode (bool): If True, the algorithm uses a faster method to compute similarity scores, potentially at the cost of accuracy.
-    - loc_threshold (float): The threshold for determining the location of interest in the similarity graph. Values above this threshold are considered significant.
-    - is_high_sim (bool): If True, higher similarity scores indicate higher similarity. If False, lower scores indicate higher similarity.
-    - need_input_255 (bool): If True, input images are expected to be scaled to [0, 255]. If False, images are expected to be in [0, 1].
-    - **kwargs: Additional keyword arguments passed to the superclass initializer.
+    Args:
+        stride_ratio (float): The ratio of the stride to the patch size, determining the overlap between patches. The lower the value, the higher the overlap.
+        fast_sim_mode (bool): If True, the algorithm uses a faster method to compute similarity scores, potentially at the cost of accuracy.
+        loc_threshold (float): The threshold for determining the location of interest in the similarity graph. Values above this threshold are considered significant.
+        is_high_sim (bool): If True, higher similarity scores indicate higher similarity. If False, lower scores indicate higher similarity.
+        need_input_255 (bool): If True, input images are expected to be scaled to [0, 255]. If False, images are expected to be in [0, 1].
+        **kwargs: Additional keyword arguments passed to the superclass initializer.
 
     Example Usage:
     ```python
@@ -71,6 +49,7 @@ class FSG(FsmPLWrapper):
     plt.show()
     ```
     """
+
     def __init__(
         self,
         stride_ratio=0.5,

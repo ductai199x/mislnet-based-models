@@ -1,35 +1,45 @@
 import torch
 import torch.nn as nn
-from .base_model.base_model_class import BaseModel
+from .base_model_class import BaseModel
 from typing import *
 
 
-class ConstrainedConv(nn.Module):
-    def __init__(self, input_chan=3, num_filters=6, is_constrained=True):
+class FusedConstrainedConv(nn.Module):
+    def __init__(
+        self, 
+        num_constrained_filters=32,
+        num_rgb_filters=32,
+        input_chan=3,
+    ):
         super().__init__()
         self.kernel_size = 5
         self.input_chan = input_chan
-        self.num_filters = num_filters
-        self.is_constrained = is_constrained
-        self.weight = nn.Parameter(
+        self.num_constrained_filters = num_constrained_filters
+        self.num_rgb_filters = num_rgb_filters
+        self.output_chan = num_constrained_filters + num_rgb_filters
+
+        weight = torch.empty(num_constrained_filters, input_chan, self.kernel_size, self.kernel_size)
+        nn.init.xavier_normal_(weight, gain=1/3)
+        self.weight = nn.Parameter(weight, requires_grad=True)
+        self.one_middle = torch.zeros(self.kernel_size * self.kernel_size)
+        self.one_middle[self.one_middle.numel() // 2] = 1
+        self.one_middle = nn.Parameter(self.one_middle, requires_grad=False)
+
+        self.rgb_weight = nn.Parameter(
             nn.init.xavier_normal_(
-                torch.empty(num_filters, input_chan, self.kernel_size, self.kernel_size), gain=1 / 3
+                torch.empty(num_rgb_filters, input_chan, self.kernel_size, self.kernel_size), gain=1 / 3
             ),
             requires_grad=True,
         )
-        self.one_middle = torch.zeros(self.kernel_size * self.kernel_size)
-        self.one_middle[12] = 1
-        self.one_middle = nn.Parameter(self.one_middle, requires_grad=False)
 
     def forward(self, x):
-        w = self.weight
-        if self.is_constrained:
-            w = w.view(-1, self.kernel_size * self.kernel_size)
-            w = w - w.mean(1)[..., None] + 1 / (self.kernel_size * self.kernel_size - 1)
-            w = w - (w + 1) * self.one_middle
-            w = w.view(self.num_filters, self.input_chan, self.kernel_size, self.kernel_size)
-        x = nn.functional.conv2d(x, w, padding="valid")
-        x = nn.functional.pad(x, (2, 3, 2, 3))
+        w_cstr = self.weight
+        w_cstr = w_cstr.view(-1, self.kernel_size * self.kernel_size)
+        w_cstr = w_cstr - w_cstr.mean(1)[..., None] + 1 / (self.kernel_size * self.kernel_size - 1)
+        w_cstr = w_cstr - (w_cstr + 1) * self.one_middle
+        w_cstr = w_cstr.view(self.num_constrained_filters, self.input_chan, self.kernel_size, self.kernel_size)
+        weight = torch.cat([w_cstr, self.rgb_weight], dim=0)
+        x = nn.functional.conv2d(x, weight, padding="same")
         return x
 
 
@@ -76,7 +86,7 @@ class DenseBlock(torch.nn.Module):
         return self.act(self.fc(x))
 
 
-class MISLNet(BaseModel):
+class MISLNet_v2(BaseModel):
     arch = {
         "p256": [
             ("conv1", -1, 96, 7, 2, "valid", "tanh"),
@@ -126,16 +136,18 @@ class MISLNet(BaseModel):
         patch_size: int,
         variant: str,
         num_classes=0,
-        num_filters=6,
-        is_constrained=True,
+        num_constrained_filters=6,
+        num_rgb_filters=32,
         **kwargs,
     ):
         super().__init__(patch_size, num_classes)
         self.variant = variant
         self.chosen_arch = self.arch[variant]
-        self.num_filters = num_filters
+        self.num_constrained_filters = num_constrained_filters
+        self.num_rgb_filters = num_rgb_filters
 
-        self.constrained_conv = ConstrainedConv(num_filters=num_filters, is_constrained=is_constrained)
+        self.constrained_conv = FusedConstrainedConv(num_constrained_filters, num_rgb_filters)
+        
 
         self.conv_blocks = []
         self.fc_blocks = []
@@ -143,7 +155,7 @@ class MISLNet(BaseModel):
             if block[0].startswith("conv"):
                 self.conv_blocks.append(
                     ConvBlock(
-                        in_chans=(num_filters if block[1] == -1 else block[1]),
+                        in_chans=(self.constrained_conv.output_chan if block[1] == -1 else block[1]),
                         out_chans=block[2],
                         kernel_size=block[3],
                         stride=block[4],

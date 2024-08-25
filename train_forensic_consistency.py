@@ -13,7 +13,7 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 from typing import *
 
-from model.forensic_consistency_plwrapper import ForensicConsistencyPLWrapper
+from model.plwrapper.forensic_consistency_plwrapper import ForensicConsistencyPLWrapper
 from data.img_consistency_dataset import ImageConsistencyDataset
 
 torch.set_float32_matmul_precision("high")

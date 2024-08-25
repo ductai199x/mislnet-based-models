@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .base_model.base_model_class import BaseModel
+from .base_model_class import BaseModel
 from typing import *
 
 
@@ -11,12 +11,9 @@ class ConstrainedConv(nn.Module):
         self.input_chan = input_chan
         self.num_filters = num_filters
         self.is_constrained = is_constrained
-        self.weight = nn.Parameter(
-            nn.init.xavier_normal_(
-                torch.empty(num_filters, input_chan, self.kernel_size, self.kernel_size), gain=1 / 3
-            ),
-            requires_grad=True,
-        )
+        weight = torch.empty(num_filters, input_chan, self.kernel_size, self.kernel_size)
+        nn.init.xavier_normal_(weight, gain=1/3)
+        self.weight = nn.Parameter(weight, requires_grad=True)
         self.one_middle = torch.zeros(self.kernel_size * self.kernel_size)
         self.one_middle[12] = 1
         self.one_middle = nn.Parameter(self.one_middle, requires_grad=False)

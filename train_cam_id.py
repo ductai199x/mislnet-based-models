@@ -12,22 +12,28 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 from typing import *
 
-from model.cam_id_plwrapper import CamIdPLWrapper
+from model.plwrapper.cam_id_plwrapper import CamIdPLWrapper
 from data.cam_id_dataset import CamIdDataset
 
 torch.set_float32_matmul_precision("high")
 
 parser = argparse.ArgumentParser()
-EXPERIMENT_NAME = "mislnet_64c"
+EXPERIMENT_NAME = "camid"
 
 
 def prepare_model(args: dict[str, Any]) -> CamIdPLWrapper:
     if args["prev_ckpt"]:
         print("Loading model from checkpoint:", args["prev_ckpt"])
-        model = CamIdPLWrapper.load_from_checkpoint(args["prev_ckpt"])
+        if args["resume"]:
+            print("Resuming training from checkpoint")
+            return CamIdPLWrapper.load_from_checkpoint(args["prev_ckpt"])
+        else:
+            model = CamIdPLWrapper(args["model_args"], args["training_args"])
+            ckpt = torch.load(args["prev_ckpt"], map_location="cpu")
+            model.load_state_dict(ckpt["state_dict"])
+            return model
     else:
-        model = CamIdPLWrapper(args["model_args"], args["training_args"])
-    return model
+        return CamIdPLWrapper(args["model_args"], args["training_args"])
 
 
 def prepare_datasets(args: dict[str, Any]) -> Tuple[DataLoader, DataLoader]:

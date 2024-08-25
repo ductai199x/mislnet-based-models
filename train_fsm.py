@@ -12,7 +12,7 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 from typing import *
 
-from model.fsm_plwrapper import FsmPLWrapper
+from model.plwrapper.fsm_plwrapper import FsmPLWrapper
 from data.fsm_dataset import CamIdDataset, FsmDataset
 
 torch.set_float32_matmul_precision("high")

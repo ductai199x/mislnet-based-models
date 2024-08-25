@@ -1,5 +1,5 @@
 from importlib.machinery import SourceFileLoader
-from model.mislnet import MISLNet
+from model.base_model import MISLNet
 
 
 def config(fe_config, fe_ckpt=None):

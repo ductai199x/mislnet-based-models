@@ -1,4 +1,4 @@
-from model.mislnet import MISLNet
+from model.base_model import MISLNet
 
 config = {
     "model_args": {

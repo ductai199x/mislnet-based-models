@@ -3,16 +3,19 @@ import torch
 import torch.nn.functional as F
 from lightning.pytorch import LightningModule
 from torchmetrics.classification import MulticlassAccuracy, MulticlassConfusionMatrix
-from .cam_id_base import CamIdBase
+from ..base_model import BaseModel, get_base_model_cls
 from typing import Dict, Any
 
 
 class CamIdPLWrapper(LightningModule):
     def __init__(self, model_config : Dict[str, Any], training_config : Dict[str, Any]):
         super().__init__()
-        model_cls = model_config.pop("_target_")
-        model_config["model_name"] = model_cls.__name__
-        self.model: CamIdBase = model_cls(**model_config)
+        if "_target_" in model_config:
+            model_cls = model_config.pop("_target_")
+            model_config["model_name"] = model_cls.__name__
+        else:
+            model_cls = get_base_model_cls(model_config["model_name"])
+        self.model: BaseModel = model_cls(**model_config)
         self.is_constr_conv = hasattr(self.model, "constrained_conv")
         self.training_config = training_config
         self.class_weights = training_config["class_weights"]
@@ -22,7 +25,7 @@ class CamIdPLWrapper(LightningModule):
         self.test_acc = MulticlassAccuracy(num_classes=self.model.num_classes)
         self.test_confusion_matrix = MulticlassConfusionMatrix(num_classes=self.model.num_classes)
 
-        self.save_hyperparameters(model_config, training_config)
+        self.save_hyperparameters("model_config", "training_config")
         self.example_input_array = torch.randn(1, 3, self.model.patch_size, self.model.patch_size)
 
     def forward(self, x):

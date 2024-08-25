@@ -1,34 +1,34 @@
 import re
 import torch
 import torch.nn as nn
-from .base_model import BaseModel, MISLNet, get_base_model_cls
-from .head import CompareNet
-from typing import Type, Union, Dict, Any
+from .head import ForensicAttentionHead
+from .base_model import BaseModel, get_base_model_cls
+from typing import Any, Type, Union
 
 
-class FSM(nn.Module):
+class FAM(nn.Module):
     """
-    FSM (Forensic Similarity Metric) is a neural network module that computes the similarity between two input images using a feature extraction module and a comparison network module.
+    Forensic Attention Model (FAM) module.
 
     Args:
-        fe_config (dict): Configuration for the feature extraction module. Default is `default_fe_config`.
-        fe_ckpt (str): Path to the checkpoint file for the feature extraction module.
-        comparenet_config (dict): Configuration for the comparison network module.
-        **kwargs: Additional keyword arguments.
+        fe_config (dict[str, Any]): Configuration dictionary for the feature extractor.
+        fe_ckpt (str, optional): Path to the checkpoint file for the feature extractor. Defaults to None.
+        freeze_fe (bool, optional): Whether to freeze the feature extractor during training. Defaults to True.
+        num_heads (int, optional): Number of attention heads in the ForensicAttentionHead. Defaults to 8.
+        mlp_ratio (float, optional): Ratio of hidden dimension to input dimension in the ForensicAttentionHead. Defaults to 4.
+        num_blocks (int, optional): Number of blocks in the ForensicAttentionHead. Defaults to 4.
+        qkv_bias (bool, optional): Whether to include bias in the query, key, and value projections in the ForensicAttentionHead. Defaults to True.
     """
     
-    default_fe_config = {
-        "_target_": MISLNet,
-        "patch_size": 128,
-        "variant": "p128",
-    }
-
     def __init__(
         self,
-        fe_config=default_fe_config,
-        fe_ckpt=None,
-        comparenet_config=dict(),
-        **kwargs,
+        fe_config: dict[str, Any],
+        fe_ckpt: str = None,
+        freeze_fe: bool = True,
+        num_heads: int = 8,
+        mlp_ratio: float = 4,
+        num_blocks: int = 4,
+        qkv_bias: bool = True,
     ):
         super().__init__()
         if "_target_" in fe_config:
@@ -38,11 +38,18 @@ class FSM(nn.Module):
             fe_cls = get_base_model_cls(fe_config["model_name"])
         fe_config["num_classes"] = 0  # to make fe without final classification layer
         self.fe: BaseModel = self.load_module_from_ckpt(fe_cls, fe_ckpt, "", **fe_config)
+        self.freeze_fe = freeze_fe
         self.patch_size = self.fe.patch_size
         example_tensor = torch.randn((1, 3, self.patch_size, self.patch_size), requires_grad=False)
-        comparenet_config["input_dim"] = self.fe(example_tensor).shape[1]
-        self.comparenet = CompareNet(**comparenet_config)
-        self.fe_freeze = True
+        self.fe_embed_dim = self.fe(example_tensor).shape[1]
+
+        self.head = ForensicAttentionHead(
+            self.fe_embed_dim,
+            num_heads=num_heads,
+            num_blocks=num_blocks,
+            mlp_ratio=mlp_ratio,
+            qkv_bias=qkv_bias,
+        )
 
     def load_module_state_dict(self, module: nn.Module, state_dict, module_name=""):
         curr_model_state_dict = module.state_dict()
@@ -93,11 +100,9 @@ class FSM(nn.Module):
         try:
             super().load_state_dict(state_dict, strict=strict, assign=assign)
         except Exception as e:
-            print(f"Error loading state dict using normal method: {e}")
-            print("Trying to load state dict manually...")
+            print(f"Error loading state dict: {e}, trying to load manually")
             self.load_module_state_dict(self.fe, state_dict, module_name="fe")
-            self.load_module_state_dict(self.comparenet, state_dict, module_name="comparenet")
-            print("State dict loaded successfully!")
+            self.load_module_state_dict(self.head, state_dict, module_name="head")
 
     def forward_fe(self, x):
         if self.freeze_fe:
@@ -108,7 +113,10 @@ class FSM(nn.Module):
             self.fe.train()
             return self.fe(x)
 
-    def forward(self, x1, x2):
-        x1 = self.forward_fe(x1)
-        x2 = self.forward_fe(x2)
-        return self.comparenet(x1, x2)
+    def forward(self, x):
+        B, P, C, H, W = x.shape
+        x = x.view(B * P, C, H, W)
+        x = self.forward_fe(x)
+        x = x.view(B, P, -1)
+        x = self.head(x)
+        return x

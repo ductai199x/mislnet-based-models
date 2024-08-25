@@ -19,7 +19,7 @@ class CamIdDataset(Dataset):
         split,
         calc_class_weights=True,
         ignore_classes: Union[None, List[int]] = None,
-        remap_labels=False
+        remap_labels=False,
     ):
         self.remap_labels = remap_labels
 
